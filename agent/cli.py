@@ -5,7 +5,6 @@ import argparse
 import json
 from pathlib import Path
 
-import anthropic
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
@@ -15,6 +14,7 @@ from rich.table import Table
 
 from .config import Config
 from .core import Agent
+from .providers import ProviderError
 
 console = Console()
 
@@ -57,7 +57,7 @@ def _show_tools(agent: Agent) -> None:
     table = Table("Tool", "What it does", "Asks first")
     for t in agent.tools.values():
         table.add_row(t.name, t.description, "yes" if t.confirm else "")
-    if agent.config.web_search:
+    if agent.config.web_search and agent.backend.has_server_search:
         table.add_row("web_search", "Search the web (built into Claude)", "")
     console.print(table)
 
@@ -67,13 +67,14 @@ def _ask(agent: Agent, prompt: str) -> None:
         agent.run(prompt)
     except KeyboardInterrupt:
         console.print("[yellow]Interrupted.[/yellow]")
-    except anthropic.APIError as e:
-        console.print(f"[red]API error:[/red] {escape(str(e))}")
+    except ProviderError as e:
+        console.print(f"[red]{escape(str(e))}[/red]")
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="General-purpose AI agent powered by Claude")
+    parser = argparse.ArgumentParser(description="General-purpose AI agent (Claude or Gemini)")
     parser.add_argument("prompt", nargs="*", help="Run a single request and exit")
+    parser.add_argument("--provider", choices=["anthropic", "gemini"], help="Override AGENT_PROVIDER")
     parser.add_argument("--model", help="Override AGENT_MODEL")
     parser.add_argument("--workspace", help="Folder the agent works in")
     parser.add_argument("--auto-approve", action="store_true",
@@ -81,6 +82,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config = Config()
+    if args.provider and args.provider != config.provider:
+        config.provider, config.model = args.provider, ""
+        config.__post_init__()
     if args.model:
         config.model = args.model
     if args.workspace:
@@ -95,7 +99,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     console.print(Panel.fit(
-        f"[bold]AI Agent[/bold]  model [cyan]{escape(config.model)}[/cyan]\n"
+        f"[bold]AI Agent[/bold]  {escape(config.provider)} · [cyan]{escape(config.model)}[/cyan]\n"
         f"workspace [cyan]{escape(str(config.workspace))}[/cyan]\nType /help for commands."
     ))
     while True:

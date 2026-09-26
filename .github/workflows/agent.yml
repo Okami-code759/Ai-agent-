@@ -33,6 +33,9 @@ jobs:
       - name: Run agent
         run: python -m agent.github_action
         env:
+          # Add ANTHROPIC_API_KEY (Claude) or GEMINI_API_KEY (free) as a repository secret.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AGENT_MODEL: ${{ vars.AGENT_MODEL || 'claude-sonnet-5' }}
+          AGENT_PROVIDER: ${{ vars.AGENT_PROVIDER }}   # optional: anthropic | gemini
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}         # optional: defaults per provider

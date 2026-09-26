@@ -40,3 +40,24 @@ def fetch_url(ctx, url: str) -> str:
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + "\n... (truncated)"
     return f"URL: {resp.url}\nTitle: {title}\n\n{text}"
+
+
+@tool(
+    "search_web",
+    "Search the web (DuckDuckGo) and return the top results with links and snippets. "
+    "Use fetch_url to read a result in full.",
+    {"query": {"type": "string"}},
+    ci=True,
+)
+def search_web(ctx, query: str) -> str:
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        raise ToolError("Web search needs the 'ddgs' package: pip install ddgs")
+    try:
+        results = DDGS().text(query, max_results=8)
+    except Exception as e:
+        raise ToolError(f"Search failed: {e}")
+    return "\n\n".join(
+        f"{r.get('title', '')}\n{r.get('href', '')}\n{r.get('body', '')}" for r in results
+    ) or "No results."

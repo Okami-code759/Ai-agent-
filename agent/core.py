@@ -1,13 +1,12 @@
-"""The agent loop: ask Claude, run the tools it requests, feed results back, repeat."""
+"""The agent loop: ask the model, run the tools it requests, feed results back, repeat."""
 from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any, ContextManager, Protocol
-
-import anthropic
+from typing import ContextManager, Protocol
 
 from .config import Config
+from .providers import ToolCall, ToolResult, make_backend
 from .tools import ToolError, load_tools
 from .tools.memory import memory_summary
 
@@ -46,12 +45,14 @@ class Agent:
     def __init__(self, config: Config, ui: UI):
         self.config = config
         self.ui = ui
-        self.client = anthropic.Anthropic(api_key=config.api_key)
         self.tools = load_tools(ci=config.ci)
-        self.messages: list[dict[str, Any]] = []
+        # Claude has built-in web search; other models use the free `search_web` tool instead.
+        if config.provider == "anthropic" or not config.web_search:
+            self.tools.pop("search_web", None)
+        self.backend = make_backend(config, self.tools)
 
     def reset(self) -> None:
-        self.messages.clear()
+        self.backend.messages.clear()
 
     def _system(self) -> str:
         return SYSTEM_PROMPT.format(
@@ -61,71 +62,50 @@ class Agent:
             notes="(not available in CI)" if self.config.ci else memory_summary(self.config),
         )
 
-    def _tool_schemas(self) -> list[dict[str, Any]]:
-        schemas = [t.schema() for t in self.tools.values()]
-        if self.config.web_search:
-            # Server-side tool: Anthropic runs the search, no extra API key needed.
-            schemas.append({"type": "web_search_20250305", "name": "web_search", "max_uses": 5})
-        return schemas
-
     def run(self, user_input: str) -> str:
         """Handle one user message. Returns the agent's final answer text."""
-        start = len(self.messages)
-        self.messages.append({"role": "user", "content": user_input})
+        start = len(self.backend.messages)
+        self.backend.add_user(user_input)
         try:
             return self._loop()
         except BaseException:
-            del self.messages[start:]  # keep history valid if interrupted or on error
+            del self.backend.messages[start:]  # keep history valid if interrupted or on error
             raise
 
     def _loop(self) -> str:
         answer: list[str] = []
         for _ in range(self.config.max_steps):
             with self.ui.thinking():
-                response = self.client.messages.create(
-                    model=self.config.model,
-                    max_tokens=self.config.max_tokens,
-                    system=self._system(),
-                    tools=self._tool_schemas(),
-                    messages=self.messages,
-                )
-            if self.messages[-1]["role"] == "assistant":  # continuing after pause_turn
-                self.messages[-1]["content"] = list(self.messages[-1]["content"]) + list(response.content)
-            else:
-                self.messages.append({"role": "assistant", "content": response.content})
+                step = self.backend.step(self._system())
+            if step.text:
+                self.ui.text(step.text)
+                answer.append(step.text)
 
-            text = "".join(b.text for b in response.content if b.type == "text").strip()
-            if text:
-                self.ui.text(text)
-                answer.append(text)
-
-            if response.stop_reason == "tool_use":
+            if step.tool_calls:
                 answer.clear()  # only the text after the last tool call counts as the answer
-                results = [self._run_tool(b) for b in response.content if b.type == "tool_use"]
-                self.messages.append({"role": "user", "content": results})
+                self.backend.add_tool_results([self._run_tool(c) for c in step.tool_calls])
                 continue
-            if response.stop_reason == "pause_turn":
-                continue  # a long server-side search paused; send it back to let Claude continue
-            if response.stop_reason == "max_tokens":
+            if step.stop == "continue":
+                continue  # a long server-side search paused; send it back to let the model continue
+            if step.stop == "max_tokens":
                 answer.append("_(Response cut off: hit the max token limit.)_")
             return "\n\n".join(answer)
 
         answer.append("_(Stopped: reached the maximum number of steps.)_")
         return "\n\n".join(answer)
 
-    def _run_tool(self, block) -> dict[str, Any]:
-        name, args = block.name, dict(block.input or {})
-        self.ui.tool_call(name, args)
-        tool = self.tools.get(name)
+    def _run_tool(self, call: ToolCall) -> ToolResult:
+        self.ui.tool_call(call.name, call.args)
+        tool = self.tools.get(call.name)
         is_error = False
 
         if tool is None:
-            output, is_error = f"Unknown tool: {name}", True
-        elif tool.confirm and not self.config.auto_approve and not self.ui.confirm(name, args):
+            output, is_error = f"Unknown tool: {call.name}", True
+        elif tool.confirm and not self.config.auto_approve and not self.ui.confirm(call.name, call.args):
             output, is_error = "The user declined to run this. Ask how they'd like to proceed.", True
         else:
             try:
-                output = tool.fn(self.config, **args)
+                output = tool.fn(self.config, **call.args)
             except ToolError as e:
                 output, is_error = str(e), True
             except Exception as e:  # report any bug back to the model instead of crashing
@@ -135,6 +115,5 @@ class Agent:
             output = json.dumps(output, default=str)
         if len(output) > MAX_RESULT_CHARS:
             output = output[:MAX_RESULT_CHARS] + f"\n... (truncated from {len(output)} chars)"
-        self.ui.tool_result(name, output, is_error)
-        return {"type": "tool_result", "tool_use_id": block.id, "content": output or "(no output)",
-                "is_error": is_error}
+        self.ui.tool_result(call.name, output, is_error)
+        return ToolResult(call.id, call.name, output or "(no output)", is_error)
