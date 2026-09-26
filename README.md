@@ -3,7 +3,7 @@
 A general-purpose AI agent in Python, powered by Claude or Google Gemini (free tier). Chat with it in your terminal and it
 can search the web, read pages, write and edit files, run code and shell commands, manage your
 GitHub repos, issues and pull requests, do exact maths, and remember things between sessions.
-It can also run **on GitHub itself**: comment `/agent <request>` on any issue or PR and it replies.
+Use it as an **app** in your browser or on your phone's home screen. It can also run **on GitHub itself**: comment `/agent <request>` on any issue or PR and it replies.
 
 ## What it can do
 
@@ -56,6 +56,39 @@ Some things to try:
 - "Create a private GitHub repo called notes-app and list my open issues across repos"
 - "Remember that I prefer Python type hints" (it'll recall this next session)
 - "Review PR #3 in myname/myrepo and point out bugs"
+
+## Use it as an app
+
+```bash
+python app.py
+```
+
+Open http://127.0.0.1:8000 in your browser. You get a chat screen that shows each tool the
+agent uses, and asks you with a yellow card before anything risky (tap **Run it** or **Don't run**).
+The send button turns into **Stop** while it's working.
+
+### On your phone (same Wi-Fi)
+
+1. In `.env`, set `APP_PASSWORD=` to something long.
+2. Run `python app.py --host 0.0.0.0`. It prints an address like `http://192.168.1.20:8000`.
+3. Open that address on your phone and enter the password.
+4. Add it to your home screen: iPhone: Share → **Add to Home Screen**. Android: ⋮ → **Add to Home screen**
+   / **Install app**. It opens full-screen with its own icon, like a normal app.
+
+When the app is reachable from other devices it runs in **safe mode**: no shell commands, no
+Python, no deleting files. Set `AGENT_SAFE_MODE=false` only if you trust everyone on the network.
+
+### Put the app online (use it anywhere)
+
+The repo includes `render.yaml` for [Render](https://render.com)'s free plan:
+
+1. Sign in to Render with GitHub, then **New → Blueprint** and pick this repo.
+2. When asked, paste your `GEMINI_API_KEY` and choose an `APP_PASSWORD`.
+3. Render gives you a `https://….onrender.com` address. Open it on your phone and add it to your
+   home screen.
+
+Free Render apps sleep when unused, so the first visit after a while takes up to a minute to wake.
+Notes and to-dos saved on Render are lost when it restarts. Safe mode is always on there.
 
 ## Put it on GitHub
 
@@ -119,7 +152,10 @@ workspace folder, memory file location, web search on/off, command timeout, and
 ## Project layout
 
 ```
-run.py                     entry point
+run.py                     terminal version
+app.py                     app version (web + phone)
+agent/web.py               app server
+agent/static/              app interface, icons, fonts
 agent/core.py              the agent loop (model <-> tools)
 agent/providers.py         Claude and Gemini backends
 agent/cli.py               terminal interface

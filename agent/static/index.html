@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Agent</title>
+<meta name="theme-color" content="#EDF1F5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121A26" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Agent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 400; font-display: swap; src: url(/static/fonts/atkinson-400.woff2) format("woff2"); }
+@font-face { font-family: "Atkinson Hyperlegible"; font-weight: 700; font-display: swap; src: url(/static/fonts/atkinson-700.woff2) format("woff2"); }
+@font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url(/static/fonts/jetbrains-mono-400.woff2) format("woff2"); }
+
+:root {
+  --paper: #EDF1F5;
+  --surface: #FFFFFF;
+  --ink: #172033;
+  --graphite: #5B6778;
+  --rule: #C9D2DD;
+  --signal: #F4C542;
+  --on-signal: #1E1A0C;
+  --ok: #2F7D5B;
+  --err: #B4412F;
+  --bubble: #172033;
+  --on-bubble: #F3F6FA;
+  --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121A26; --surface: #1A2433; --ink: #E3E9F1; --graphite: #93A0B3; --rule: #2C3A4E;
+    --ok: #5DBB8E; --err: #EE7B66; --bubble: #E3E9F1; --on-bubble: #121A26;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: grid; grid-template-rows: auto 1fr auto; height: 100dvh;
+  background: var(--paper); color: var(--ink);
+  font: 17px/1.55 var(--body); -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Top bar */
+.bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.brand { font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+.model { font-size: 13px; color: var(--graphite); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.new-chat {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 1px solid var(--rule); border-radius: 999px; padding: 6px 12px; font-size: 15px;
+}
+.new-chat:disabled { opacity: .45; cursor: default; }
+
+/* Conversation */
+main { overflow-y: auto; overscroll-behavior: contain; padding: 20px 16px 28px; }
+.col { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.user {
+  align-self: flex-end; max-width: 85%;
+  background: var(--bubble); color: var(--on-bubble);
+  padding: 10px 15px; border-radius: 20px 20px 6px 20px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.agent { overflow-wrap: anywhere; }
+.agent > :first-child { margin-top: 0; }
+.agent > :last-child { margin-bottom: 0; }
+.agent p, .agent ul, .agent ol { margin: .55em 0; }
+.agent h1, .agent h2, .agent h3 { font-size: 1.1em; margin: 1em 0 .4em; }
+.agent a { color: inherit; text-underline-offset: 3px; }
+.agent code { font: .88em var(--mono); background: var(--surface); border: 1px solid var(--rule); border-radius: 5px; padding: 1px 5px; }
+.agent pre { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; overflow-x: auto; }
+.agent pre code { background: none; border: 0; padding: 0; font-size: 13.5px; line-height: 1.5; }
+.agent table { border-collapse: collapse; display: block; overflow-x: auto; }
+.agent th, .agent td { border: 1px solid var(--rule); padding: 6px 10px; text-align: left; }
+
+/* Tool activity: a quiet ledger in the margin of the conversation */
+.tool { border-left: 2px solid var(--rule); padding-left: 12px; font: 13px/1.5 var(--mono); color: var(--graphite); }
+.tool + .tool, .tool + .thinking { margin-top: -10px; }
+.tool summary { list-style: none; cursor: pointer; display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+.tool summary::-webkit-details-marker { display: none; }
+.tool .name { color: var(--ink); }
+.tool .args { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tool .mark { width: 1ch; flex: none; text-align: center; }
+.tool.ok .mark { color: var(--ok); }
+.tool.err .mark { color: var(--err); }
+.tool.running .mark::before { content: ""; display: inline-block; width: 8px; height: 8px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+.tool .out { margin: 6px 0 4px; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 12px; color: var(--ink); }
+
+/* Approval: the one loud thing on screen, because it needs you */
+.ask { background: var(--signal); color: var(--on-signal); border-radius: 14px; padding: 14px 16px; }
+.ask h3 { margin: 0; font-size: 17px; }
+.ask p { margin: 2px 0 10px; font-size: 15px; }
+.ask pre { margin: 0 0 12px; font: 13px/1.5 var(--mono); background: rgba(0,0,0,.08); border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; }
+.ask .actions { display: flex; gap: 10px; }
+.ask button { border-radius: 999px; padding: 8px 18px; font-weight: 700; border: 1.5px solid var(--on-signal); }
+.ask .yes { background: var(--on-signal); color: var(--signal); }
+.ask .no { background: transparent; }
+.ask.answered { opacity: .7; }
+.ask.answered pre { display: none; }
+
+.thinking { display: flex; gap: 5px; padding: 6px 0 6px 14px; }
+.thinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--graphite); animation: pulse 1.2s ease-in-out infinite; }
+.thinking span:nth-child(2) { animation-delay: .15s; }
+.thinking span:nth-child(3) { animation-delay: .3s; }
+
+.note { font-size: 14px; color: var(--graphite); }
+.note.err { color: var(--err); border-left: 2px solid var(--err); padding-left: 12px; }
+
+/* Empty state */
+.empty { padding-top: 6vh; }
+.empty h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.015em; }
+.empty p { margin: 0 0 20px; color: var(--graphite); max-width: 34em; }
+.ideas { display: grid; gap: 10px; }
+@media (min-width: 640px) { .ideas { grid-template-columns: 1fr 1fr; } }
+.ideas button { text-align: left; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; font-size: 15px; line-height: 1.4; }
+
+/* Composer */
+.composer { padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px); border-top: 1px solid var(--rule); }
+.status { max-width: 720px; margin: 0 auto 8px; font-size: 13px; color: var(--err); }
+.status:empty { display: none; }
+.box {
+  max-width: 720px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 24px; padding: 6px 6px 6px 16px;
+}
+.box:focus-within { border-color: var(--ink); }
+textarea {
+  flex: 1; border: 0; background: transparent; color: inherit; resize: none; outline: none;
+  font: inherit; line-height: 1.45; padding: 8px 0; max-height: 40vh; min-height: 24px;
+}
+textarea::placeholder { color: var(--graphite); }
+.send {
+  flex: none; width: 40px; height: 40px; border-radius: 50%; border: 0;
+  background: var(--ink); color: var(--paper); display: grid; place-items: center;
+}
+.send:disabled { opacity: .35; cursor: default; }
+.send svg { width: 18px; height: 18px; }
+
+/* Password gate */
+.gate { max-width: 360px; margin: 12vh auto 0; }
+.gate h1 { font-size: 24px; margin: 0 0 6px; }
+.gate p { color: var(--graphite); margin: 0 0 16px; }
+.gate label { display: block; font-size: 15px; margin-bottom: 6px; }
+.gate input { width: 100%; font: inherit; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--rule); background: var(--surface); color: inherit; }
+.gate button { margin-top: 12px; width: 100%; padding: 10px; border-radius: 12px; border: 0; background: var(--ink); color: var(--paper); font-weight: 700; }
+.gate .bad { color: var(--err); font-size: 14px; margin-top: 8px; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .thinking span, .tool.running .mark::before { animation: none; opacity: .7; }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <span class="brand">Agent</span>
+  <span class="model" id="model"></span>
+  <button class="new-chat" id="newChat" type="button" aria-label="Start a new chat">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    New chat
+  </button>
+</header>
+
+<main id="main"><div class="col" id="log" aria-live="polite"></div></main>
+
+<footer class="composer">
+  <div class="status" id="status" role="status"></div>
+  <form class="box" id="form">
+    <textarea id="input" rows="1" placeholder="Ask your agent to do something…" aria-label="Message" enterkeyhint="send"></textarea>
+    <button class="send" id="send" type="submit" aria-label="Send" disabled></button>
+  </form>
+</footer>
+
+<script src="/static/vendor/marked.umd.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script>
+(() => {
+  const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+  const ICON_STOP = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>';
+  const IDEAS = [
+    "Search the web for today's biggest tech news and summarise it",
+    "Write a Python script that renames photos by the date they were taken",
+    "List my GitHub repos and tell me what each one is for",
+    "Add “finish assignment” to my to-do list for Friday",
+  ];
+  const WHY = {
+    run_shell: "This runs a command on the computer the agent is on.",
+    run_python: "This runs Python code on the computer the agent is on.",
+    delete_file: "This deletes something in the agent's workspace.",
+    github_create_repo: "This creates a new repository on your GitHub.",
+    github_create_issue: "This opens a new issue on GitHub.",
+    github_comment: "This posts a comment on GitHub as you.",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const main = $("main"), log = $("log"), input = $("input"), sendBtn = $("send"), form = $("form");
+  const status = $("status"), newChat = $("newChat"), modelEl = $("model");
+
+  let ws = null, busy = false, retry = 0, connectedBefore = false;
+  let key = localStorage.getItem("agent-key") || "";
+  let thinkingEl = null, toolEl = null;
+
+  marked.setOptions({ gfm: true, breaks: true });
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A") { node.setAttribute("target", "_blank"); node.setAttribute("rel", "noopener noreferrer"); }
+  });
+
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function nearBottom() { return main.scrollHeight - main.scrollTop - main.clientHeight < 140; }
+  function add(node, force) {
+    const stick = force || nearBottom();
+    const empty = log.querySelector(".empty");
+    if (empty) empty.remove();
+    if (thinkingEl && thinkingEl.parentNode) log.insertBefore(node, thinkingEl); else log.appendChild(node);
+    if (stick) requestAnimationFrame(() => { main.scrollTop = main.scrollHeight; });
+    return node;
+  }
+  function short(value, n) {
+    const s = typeof value === "string" ? value : JSON.stringify(value);
+    const flat = s.replace(/\s+/g, " ");
+    return flat.length > n ? flat.slice(0, n - 1) + "…" : flat;
+  }
+  function note(text, kind) { add(el("div", "note" + (kind ? " " + kind : ""), text)); }
+
+  function showEmpty() {
+    log.replaceChildren();
+    const box = el("section", "empty");
+    box.append(el("h1", null, "What should I work on?"),
+               el("p", null, "I can search the web, write and run code, manage files, keep your to-do list, and work with your GitHub."));
+    const ideas = el("div", "ideas");
+    for (const idea of IDEAS) {
+      const b = el("button", null, idea);
+      b.type = "button";
+      b.addEventListener("click", () => { input.value = idea; autosize(); input.focus(); refresh(); });
+      ideas.append(b);
+    }
+    box.append(ideas);
+    log.append(box);
+  }
+
+  function addUser(text) { add(el("div", "user", text), true); }
+  function addAgent(text) {
+    const node = el("div", "agent");
+    node.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    add(node);
+  }
+
+  function startThinking() {
+    if (thinkingEl) return;
+    thinkingEl = el("div", "thinking");
+    thinkingEl.setAttribute("aria-label", "Working");
+    thinkingEl.append(el("span"), el("span"), el("span"));
+    const stick = nearBottom();
+    log.appendChild(thinkingEl);
+    if (stick) main.scrollTop = main.scrollHeight;
+  }
+  function stopThinking() { if (thinkingEl) { thinkingEl.remove(); thinkingEl = null; } }
+
+  function addTool(name, args) {
+    const d = el("details", "tool running");
+    const s = el("summary");
+    const summary = Object.entries(args || {}).map(([k, v]) => `${k}=${short(v, 60)}`).join("  ");
+    s.append(el("span", "mark"), el("span", "name", name), el("span", "args", summary));
+    d.append(s);
+    toolEl = add(d);
+  }
+  function finishTool(name, result, isError) {
+    const d = toolEl && toolEl.querySelector(".name").textContent === name ? toolEl : null;
+    if (!d) return;
+    const declined = isError && result.startsWith("The user declined");
+    d.classList.remove("running");
+    d.classList.add(isError ? "err" : "ok");
+    d.querySelector(".mark").textContent = declined ? "–" : isError ? "✕" : "✓";
+    d.append(el("pre", "out", declined ? "Not run." : result));
+    toolEl = null;
+  }
+
+  function addAsk(ev) {
+    const card = el("section", "ask");
+    card.setAttribute("role", "alertdialog");
+    card.setAttribute("aria-label", `Allow ${ev.name}?`);
+    const args = Object.entries(ev.args || {}).map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v, null, 2)}`).join("\n\n");
+    const actions = el("div", "actions");
+    const yes = el("button", "yes", "Run it"), no = el("button", "no", "Don't run");
+    yes.type = no.type = "button";
+    const answer = (approved) => {
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: "confirm", id: ev.id, approved }));
+      card.classList.add("answered");
+      actions.replaceChildren(el("span", null, approved ? "Allowed" : "Not run"));
+    };
+    yes.addEventListener("click", () => answer(true));
+    no.addEventListener("click", () => answer(false));
+    actions.append(yes, no);
+    card.append(el("h3", null, `Allow ${ev.name}?`), el("p", null, WHY[ev.name] || "The agent wants to take an action that needs your OK."),
+                el("pre", null, args || "(no details)"), actions);
+    add(card, true);
+    yes.focus({ preventScroll: true });
+  }
+
+  function setBusy(value) {
+    busy = value;
+    sendBtn.innerHTML = busy ? ICON_STOP : ICON_SEND;
+    sendBtn.setAttribute("aria-label", busy ? "Stop" : "Send");
+    newChat.disabled = busy;
+    if (!busy) { stopThinking(); toolEl = null; }
+    refresh();
+  }
+  function refresh() {
+    const online = ws && ws.readyState === 1;
+    sendBtn.disabled = !online || (!busy && !input.value.trim());
+  }
+  function autosize() { input.style.height = "auto"; input.style.height = input.scrollHeight + "px"; }
+  function setModel(info) {
+    const provider = info.provider === "gemini" ? "Gemini" : "Claude";
+    modelEl.textContent = `${provider}, ${info.model}${info.safe_mode ? ", safe mode" : ""}`;
+  }
+
+  function handle(ev) {
+    switch (ev.type) {
+      case "hello":
+        setModel(ev);
+        if (connectedBefore && !log.querySelector(".empty")) note("Reconnected. The agent starts a fresh conversation from here.");
+        connectedBefore = true;
+        break;
+      case "thinking": ev.value ? startThinking() : stopThinking(); break;
+      case "text": addAgent(ev.text); break;
+      case "tool_call": addTool(ev.name, ev.args); break;
+      case "tool_result": finishTool(ev.name, ev.result, ev.is_error); break;
+      case "confirm": addAsk(ev); break;
+      case "busy": setBusy(ev.value); break;
+      case "error": note(ev.text, "err"); break;
+      case "stopped": note("Stopped. That request was cancelled."); break;
+      case "reset": showEmpty(); break;
+    }
+  }
+
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws?key=${encodeURIComponent(key)}`);
+    ws.onopen = () => { retry = 0; status.textContent = ""; refresh(); };
+    ws.onmessage = (e) => handle(JSON.parse(e.data));
+    ws.onclose = (e) => {
+      setBusy(false);
+      refresh();
+      if (e.code === 4401) { key = ""; localStorage.removeItem("agent-key"); showGate(true); return; }
+      status.textContent = "Lost connection to the agent. Reconnecting…";
+      setTimeout(connect, Math.min(1000 * 2 ** retry++, 15000));
+    };
+  }
+
+  function showGate(wrong) {
+    log.replaceChildren();
+    const f = el("form", "gate");
+    const inputId = "pw";
+    const label = el("label", null, "Password");
+    label.htmlFor = inputId;
+    const pw = el("input");
+    Object.assign(pw, { id: inputId, type: "password", autocomplete: "current-password", required: true });
+    const go = el("button", null, "Unlock");
+    go.type = "submit";
+    f.append(el("h1", null, "Unlock your agent"), el("p", null, "Enter the APP_PASSWORD you set when starting the app."), label, pw, go);
+    if (wrong) f.append(el("div", "bad", "That password didn't work. Check APP_PASSWORD and try again."));
+    f.addEventListener("submit", (e) => {
+      e.preventDefault();
+      key = pw.value;
+      localStorage.setItem("agent-key", key);
+      showEmpty();
+      connect();
+    });
+    log.append(f);
+    pw.focus();
+  }
+
+  async function start() {
+    let info = null;
+    try { info = await (await fetch("/api/info", { cache: "no-store" })).json(); } catch (_) {}
+    if (!info) {
+      status.textContent = "Can't reach the agent. Make sure app.py is running.";
+      setTimeout(start, 3000);
+      return;
+    }
+    status.textContent = "";
+    setModel(info);
+    if (info.auth && !key) { showGate(false); return; }
+    showEmpty();
+    connect();
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!ws || ws.readyState !== 1) return;
+    if (busy) { ws.send(JSON.stringify({ type: "stop" })); return; }
+    const text = input.value.trim();
+    if (!text) return;
+    addUser(text);
+    ws.send(JSON.stringify({ type: "message", text }));
+    input.value = "";
+    autosize();
+    setBusy(true);
+  });
+  input.addEventListener("input", () => { autosize(); refresh(); });
+  input.addEventListener("keydown", (e) => {
+    const touch = matchMedia("(pointer: coarse)").matches;
+    if (e.key === "Enter" && !e.shiftKey && !touch && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+  });
+  newChat.addEventListener("click", () => { if (ws && ws.readyState === 1 && !busy) ws.send(JSON.stringify({ type: "reset" })); });
+
+  setBusy(false);
+  start();
+})();
+</script>
+</body>
+</html>

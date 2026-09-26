@@ -1,0 +1,17 @@
+# One-click hosting on Render (free plan). See "Put the app online" in README.md.
+services:
+  - type: web
+    name: ai-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false        # you paste this in Render's dashboard
+      - key: APP_PASSWORD
+        sync: false
+      - key: AGENT_SAFE_MODE
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.12.7"

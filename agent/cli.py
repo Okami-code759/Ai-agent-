@@ -82,9 +82,8 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config = Config()
-    if args.provider and args.provider != config.provider:
-        config.provider, config.model = args.provider, ""
-        config.__post_init__()
+    if args.provider:
+        config.use_provider(args.provider)
     if args.model:
         config.model = args.model
     if args.workspace:

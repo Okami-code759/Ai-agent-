@@ -40,12 +40,19 @@ class Config:
     web_search: bool = field(default_factory=lambda: _bool("AGENT_WEB_SEARCH", True))
     auto_approve: bool = field(default_factory=lambda: _bool("AGENT_AUTO_APPROVE", False))
     command_timeout: int = field(default_factory=lambda: int(_env("AGENT_COMMAND_TIMEOUT", "60")))
+    safe_mode: bool = field(default_factory=lambda: _bool("AGENT_SAFE_MODE", False))  # no shell/Python/deletes
     ci: bool = False  # True when running inside GitHub Actions (restricted tool set)
 
     def __post_init__(self) -> None:
         if not self.provider:  # pick whichever key is set, preferring Claude
             self.provider = "gemini" if self.gemini_api_key and not self.api_key else "anthropic"
         self.model = self.model or DEFAULT_MODELS.get(self.provider, "")
+
+    def use_provider(self, provider: str) -> None:
+        """Switch provider (from a command-line flag) and reset the model to its default."""
+        if provider and provider != self.provider:
+            self.provider, self.model = provider, ""
+            self.__post_init__()
 
     def validate(self) -> None:
         if self.provider not in DEFAULT_MODELS:

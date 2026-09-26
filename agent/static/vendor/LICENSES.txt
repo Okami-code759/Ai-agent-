@@ -1,0 +1,4 @@
+marked 18.0.14 - MIT License - https://github.com/markedjs/marked
+DOMPurify 3.4.16 - Apache-2.0 / MPL-2.0 - https://github.com/cure53/DOMPurify
+Atkinson Hyperlegible (via Fontsource) - SIL Open Font License 1.1
+JetBrains Mono (via Fontsource) - SIL Open Font License 1.1

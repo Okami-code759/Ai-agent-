@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from typing import ContextManager, Protocol
 
@@ -11,6 +12,11 @@ from .tools import ToolError, load_tools
 from .tools.memory import memory_summary
 
 MAX_RESULT_CHARS = 20_000
+SAFE_MODE_BLOCKED = {"run_shell", "run_python", "delete_file"}
+
+
+class Stopped(Exception):
+    """Raised when the user presses Stop in the app."""
 
 SYSTEM_PROMPT = """You are a capable, general-purpose AI agent {where}.
 Current date/time: {now}
@@ -49,6 +55,10 @@ class Agent:
         # Claude has built-in web search; other models use the free `search_web` tool instead.
         if config.provider == "anthropic" or not config.web_search:
             self.tools.pop("search_web", None)
+        if config.safe_mode:  # e.g. when hosted online
+            for name in SAFE_MODE_BLOCKED:
+                self.tools.pop(name, None)
+        self.stop_event = threading.Event()
         self.backend = make_backend(config, self.tools)
 
     def reset(self) -> None:
@@ -64,6 +74,7 @@ class Agent:
 
     def run(self, user_input: str) -> str:
         """Handle one user message. Returns the agent's final answer text."""
+        self.stop_event.clear()
         start = len(self.backend.messages)
         self.backend.add_user(user_input)
         try:
@@ -75,6 +86,8 @@ class Agent:
     def _loop(self) -> str:
         answer: list[str] = []
         for _ in range(self.config.max_steps):
+            if self.stop_event.is_set():
+                raise Stopped()
             with self.ui.thinking():
                 step = self.backend.step(self._system())
             if step.text:
@@ -95,6 +108,8 @@ class Agent:
         return "\n\n".join(answer)
 
     def _run_tool(self, call: ToolCall) -> ToolResult:
+        if self.stop_event.is_set():
+            raise Stopped()
         self.ui.tool_call(call.name, call.args)
         tool = self.tools.get(call.name)
         is_error = False
